@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { AvatarFace, type MiawbelExpression } from './components/AvatarFace'
 import { askPerplexity } from './lib/perplexity'
 import { sanitizeTextForSpeech, speak, warmupVoices } from './lib/tts'
-import { createPortal } from 'react-dom'
+
 type VoiceState = 'idle' | 'listening' | 'thinking' | 'speaking' | 'error'
 type AppMode = 'bercanda' | 'bermain' | 'belajar'
 
@@ -51,6 +52,8 @@ export default function App() {
       ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window)
     )
   }, [])
+
+  const canRenderPortal = typeof document !== 'undefined'
 
   useEffect(() => {
     warmupVoices()
@@ -227,8 +230,8 @@ export default function App() {
       mode === 'bercanda'
         ? 'Mode bercanda dipilih. Yuk ngobrol santai~'
         : mode === 'bermain'
-        ? 'Mode bermain dipilih. Ayo seru-seruan bareng~'
-        : 'Mode belajar dipilih. Siap untuk tanya jawab yang lebih fokus.'
+          ? 'Mode bermain dipilih. Ayo seru-seruan bareng~'
+          : 'Mode belajar dipilih. Siap untuk tanya jawab yang lebih fokus.'
     )
   }
 
@@ -279,8 +282,8 @@ export default function App() {
         appMode === 'bercanda'
           ? `Jawab dengan gaya hangat, lucu, ringan, dan ramah untuk anak. Pertanyaan pengguna: ${cleanTranscript}`
           : appMode === 'bermain'
-          ? `Jawab dengan gaya playful, interaktif, imajinatif, dan menyenangkan untuk anak. Pertanyaan pengguna: ${cleanTranscript}`
-          : `Jawab dengan gaya edukatif, lembut, jelas, singkat, dan mudah dipahami anak. Pertanyaan pengguna: ${cleanTranscript}`
+            ? `Jawab dengan gaya playful, interaktif, imajinatif, dan menyenangkan untuk anak. Pertanyaan pengguna: ${cleanTranscript}`
+            : `Jawab dengan gaya edukatif, lembut, jelas, singkat, dan mudah dipahami anak. Pertanyaan pengguna: ${cleanTranscript}`
 
       const reply = await askPerplexity(modePrompt)
       const spokenReply = sanitizeTextForSpeech(reply)
@@ -309,8 +312,7 @@ export default function App() {
         }
       )
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message : 'Terjadi kesalahan.'
+      const message = error instanceof Error ? error.message : 'Terjadi kesalahan.'
 
       setErrorText(message)
       setVoiceState('error')
@@ -365,10 +367,10 @@ export default function App() {
         event.error === 'not-allowed'
           ? 'Izin mikrofon ditolak.'
           : event.error === 'no-speech'
-          ? 'Tidak ada suara yang terdeteksi.'
-          : event.error === 'audio-capture'
-          ? 'Mikrofon tidak tersedia.'
-          : `Voice recognition error: ${event.error}`
+            ? 'Tidak ada suara yang terdeteksi.'
+            : event.error === 'audio-capture'
+              ? 'Mikrofon tidak tersedia.'
+              : `Voice recognition error: ${event.error}`
 
       setErrorText(message)
       setVoiceState('error')
@@ -393,16 +395,196 @@ export default function App() {
     voiceState === 'listening'
       ? 'Mendengarkan'
       : voiceState === 'thinking'
-      ? 'Berpikir'
-      : voiceState === 'speaking'
-      ? 'Berbicara'
-      : 'Mulai Bicara'
+        ? 'Berpikir'
+        : voiceState === 'speaking'
+          ? 'Berbicara'
+          : 'Mulai Bicara'
 
   const disableMic =
     !recognitionSupported ||
     voiceState === 'thinking' ||
     voiceState === 'speaking' ||
     isInstalling
+
+  const installModal =
+    canRenderPortal && showInstallPrompt && !isInstalled
+      ? createPortal(
+          <div
+            className="install-overlay is-visible"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="install-qaira-title"
+          >
+            <div
+              className="install-backdrop"
+              onClick={() => !isInstalling && setShowInstallPrompt(false)}
+              aria-hidden="true"
+            />
+
+            <div className="install-sheet">
+              <div className="install-copy">
+                <h2 id="install-qaira-title" className="install-title">
+                  Pasang QAIRA
+                </h2>
+
+                {isIosManualInstall ? (
+                  <p className="install-desc">
+                    Untuk memasang QAIRA di iPhone atau iPad, buka di Safari, tekan
+                    tombol Share, lalu pilih Add to Home Screen.
+                  </p>
+                ) : canInstallPWA ? (
+                  <p className="install-desc">
+                    Instal QAIRA ke layar utama agar lebih cepat dibuka dan terasa
+                    seperti aplikasi ponsel.
+                  </p>
+                ) : (
+                  <p className="install-desc">
+                    QAIRA siap dipasang setelah browser memberikan izin prompt
+                    instalasi. Jika tombol install belum muncul, gunakan aplikasi
+                    beberapa saat lalu muat ulang halaman ini.
+                  </p>
+                )}
+              </div>
+
+              <div className="install-actions">
+                {!isIosManualInstall && canInstallPWA && (
+                  <button
+                    type="button"
+                    className="install-btn install-btn-primary"
+                    onClick={handleInstallNow}
+                    disabled={isInstalling}
+                  >
+                    {isInstalling ? 'Memproses...' : 'Pasang Sekarang'}
+                  </button>
+                )}
+
+                {isIosManualInstall && (
+                  <button
+                    type="button"
+                    className="install-btn install-btn-primary"
+                    onClick={() => setShowInstallPrompt(false)}
+                  >
+                    Saya Mengerti
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  className="install-btn install-btn-ghost"
+                  onClick={() => setShowInstallPrompt(false)}
+                  disabled={isInstalling}
+                >
+                  Tutup
+                </button>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )
+      : null
+
+  const settingsModal =
+    canRenderPortal && isSettingsOpen
+      ? createPortal(
+          <div
+            className="settings-overlay is-visible"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="settings-title"
+          >
+            <div
+              className="settings-backdrop"
+              aria-hidden="true"
+              onClick={() => setIsSettingsOpen(false)}
+            />
+
+            <div className="settings-sheet">
+              <div className="settings-header">
+                <div>
+                  <p className="settings-kicker">Pengaturan</p>
+                  <h2 id="settings-title" className="settings-title">
+                    Menu QAIRA
+                  </h2>
+                </div>
+
+                <button
+                  ref={settingsCloseButtonRef}
+                  type="button"
+                  className="settings-close"
+                  aria-label="Tutup pengaturan"
+                  onClick={() => setIsSettingsOpen(false)}
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div className="settings-section">
+                <h3 className="settings-section-title">Pilih mode</h3>
+
+                <div
+                  className="mode-group"
+                  role="radiogroup"
+                  aria-labelledby="mode-group-label"
+                >
+                  <p id="mode-group-label" className="sr-only">
+                    Pilih mode interaksi QAIRA
+                  </p>
+
+                  {(['bercanda', 'bermain', 'belajar'] as const).map((mode) => {
+                    const checked = appMode === mode
+
+                    return (
+                      <button
+                        key={mode}
+                        type="button"
+                        role="radio"
+                        aria-checked={checked}
+                        className={`mode-option ${checked ? 'is-active' : ''}`}
+                        onClick={() => handleModeChange(mode)}
+                      >
+                        <span className="mode-option-dot" aria-hidden="true" />
+                        <span className="mode-option-copy">
+                          <strong>
+                            {mode === 'bercanda'
+                              ? 'Mode bercanda'
+                              : mode === 'bermain'
+                                ? 'Mode bermain'
+                                : 'Mode belajar'}
+                          </strong>
+                          <small>
+                            {mode === 'bercanda'
+                              ? 'Jawaban lebih santai, hangat, dan penuh canda.'
+                              : mode === 'bermain'
+                                ? 'Cocok untuk interaksi seru, imajinatif, dan ringan.'
+                                : 'Fokus pada jawaban yang lebih edukatif dan terarah.'}
+                          </small>
+                        </span>
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+
+              <div className="settings-section">
+                <h3 className="settings-section-title">Info aplikasi</h3>
+                <p className="settings-info-text">
+                  QAIRA adalah asisten suara interaktif dengan avatar yang dirancang
+                  agar terasa hangat, ramah, dan dekat saat digunakan sehari-hari.
+                </p>
+              </div>
+
+              <div className="settings-footer">
+                <p className="settings-footer-love">
+                  QAIRA dibuat oleh seorang Ayah untuk Putri tercintanya Arabella
+                  Qaireen
+                </p>
+                <p className="settings-footer-meta">QAIRA Asisten • 2026</p>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )
+      : null
 
   return (
     <>
@@ -459,8 +641,6 @@ export default function App() {
               <h1>QAIRA</h1>
               <p>Asisten Pribadi Arabella</p>
             </div>
-
-            
 
             <button
               className={`mic-button is-${voiceState}`}
@@ -532,177 +712,8 @@ export default function App() {
         </section>
       </main>
 
-      {showInstallPrompt && !isInstalled && (
-        <div
-          className="install-overlay is-visible"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="install-qaira-title"
-        >
-          <div
-            className="install-backdrop"
-            onClick={() => !isInstalling && setShowInstallPrompt(false)}
-            aria-hidden="true"
-          />
-
-          <div className="install-sheet">
-            <div className="install-copy">
-              <h2 id="install-qaira-title" className="install-title">
-                Pasang QAIRA
-              </h2>
-
-              {isIosManualInstall ? (
-                <p className="install-desc">
-                  Untuk memasang QAIRA di iPhone atau iPad, buka di Safari, tekan
-                  tombol Share, lalu pilih Add to Home Screen.
-                </p>
-              ) : canInstallPWA ? (
-                <p className="install-desc">
-                  Instal QAIRA ke layar utama agar lebih cepat dibuka dan terasa
-                  seperti aplikasi ponsel.
-                </p>
-              ) : (
-                <p className="install-desc">
-                  QAIRA siap dipasang setelah browser memberikan izin prompt
-                  instalasi. Jika tombol install belum muncul, gunakan aplikasi
-                  beberapa saat lalu muat ulang halaman ini.
-                </p>
-              )}
-            </div>
-
-            <div className="install-actions">
-              {!isIosManualInstall && canInstallPWA && (
-                <button
-                  type="button"
-                  className="install-btn install-btn-primary"
-                  onClick={handleInstallNow}
-                  disabled={isInstalling}
-                >
-                  {isInstalling ? 'Memproses...' : 'Pasang Sekarang'}
-                </button>
-              )}
-
-              {isIosManualInstall && (
-                <button
-                  type="button"
-                  className="install-btn install-btn-primary"
-                  onClick={() => setShowInstallPrompt(false)}
-                >
-                  Saya Mengerti
-                </button>
-              )}
-
-              <button
-                type="button"
-                className="install-btn install-btn-ghost"
-                onClick={() => setShowInstallPrompt(false)}
-                disabled={isInstalling}
-              >
-                Tutup
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {isSettingsOpen && (
-        <div
-          className="settings-overlay is-visible"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="settings-title"
-        >
-          <div
-            className="settings-backdrop"
-            aria-hidden="true"
-            onClick={() => setIsSettingsOpen(false)}
-          />
-
-          <div className="settings-sheet">
-            <div className="settings-header">
-              <div>
-                <p className="settings-kicker">Pengaturan</p>
-                <h2 id="settings-title" className="settings-title">
-                  Menu QAIRA
-                </h2>
-              </div>
-
-              <button
-                ref={settingsCloseButtonRef}
-                type="button"
-                className="settings-close"
-                aria-label="Tutup pengaturan"
-                onClick={() => setIsSettingsOpen(false)}
-              >
-                ✕
-              </button>
-            </div>
-
-            <div className="settings-section">
-              <h3 className="settings-section-title">Pilih mode</h3>
-
-              <div
-                className="mode-group"
-                role="radiogroup"
-                aria-labelledby="mode-group-label"
-              >
-                <p id="mode-group-label" className="sr-only">
-                  Pilih mode interaksi QAIRA
-                </p>
-
-                {(['bercanda', 'bermain', 'belajar'] as const).map((mode) => {
-                  const checked = appMode === mode
-
-                  return (
-                    <button
-                      key={mode}
-                      type="button"
-                      role="radio"
-                      aria-checked={checked}
-                      className={`mode-option ${checked ? 'is-active' : ''}`}
-                      onClick={() => handleModeChange(mode)}
-                    >
-                      <span className="mode-option-dot" aria-hidden="true" />
-                      <span className="mode-option-copy">
-                        <strong>
-                          {mode === 'bercanda'
-                            ? 'Mode bercanda'
-                            : mode === 'bermain'
-                            ? 'Mode bermain'
-                            : 'Mode belajar'}
-                        </strong>
-                        <small>
-                          {mode === 'bercanda'
-                            ? 'Jawaban lebih santai, hangat, dan penuh canda.'
-                            : mode === 'bermain'
-                            ? 'Cocok untuk interaksi seru, imajinatif, dan ringan.'
-                            : 'Fokus pada jawaban yang lebih edukatif dan terarah.'}
-                        </small>
-                      </span>
-                    </button>
-                  )
-                })}
-              </div>
-            </div>
-
-            <div className="settings-section">
-              <h3 className="settings-section-title">Info aplikasi</h3>
-              <p className="settings-info-text">
-                QAIRA adalah asisten suara interaktif dengan avatar yang dirancang
-                agar terasa hangat, ramah, dan dekat saat digunakan sehari-hari.
-              </p>
-            </div>
-
-            <div className="settings-footer">
-              <p className="settings-footer-love">
-                QAIRA dibuat oleh seorang Ayah untuk Putri tercintanya Arabella
-                Qaireen
-              </p>
-              <p className="settings-footer-meta">QAIRA Asisten • 2026</p>
-            </div>
-          </div>
-        </div>
-      )}
+      {installModal}
+      {settingsModal}
     </>
   )
 }
