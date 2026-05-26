@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { AvatarFace, type MiawbelExpression } from './components/AvatarFace'
 import { askPerplexity } from './lib/perplexity'
 import { sanitizeTextForSpeech, speak, warmupVoices } from './lib/tts'
-
+import { createPortal } from 'react-dom'
 type VoiceState = 'idle' | 'listening' | 'thinking' | 'speaking' | 'error'
 type AppMode = 'bercanda' | 'bermain' | 'belajar'
 
