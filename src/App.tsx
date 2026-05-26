@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { AvatarFace, type MiawbelExpression } from './components/AvatarFace'
 import { askPerplexity } from './lib/perplexity'
 import { sanitizeTextForSpeech, speak, warmupVoices } from './lib/tts'
-import InstallButton from './components/InstallButton'
 
 type VoiceState = 'idle' | 'listening' | 'thinking' | 'speaking' | 'error'
 type AppMode = 'bercanda' | 'bermain' | 'belajar'
@@ -461,12 +460,7 @@ export default function App() {
               <p>Asisten Pribadi Arabella</p>
             </div>
 
-            <InstallButton
-              visible={showInstallPrompt && !isInstalled && canInstallPWA}
-              disabled={isInstalling}
-              isInstalling={isInstalling}
-              onClick={handleInstallNow}
-            />
+            
 
             <button
               className={`mic-button is-${voiceState}`}
