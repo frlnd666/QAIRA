@@ -333,7 +333,92 @@ button {
   font-weight: 600;
   transition: background var(--transition-interactive),
               opacity var(--transition-interactive),
-              transform var(--transition-interactive);
+.install-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 99999;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 0;
+  opacity: 0;
+  pointer-events: none;
+  isolation: isolate;
+  transition: opacity 280ms ease;
+}
+
+.install-overlay.is-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.install-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.52);
+  z-index: 0;
+}
+
+.install-sheet {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 100%;
+  background: var(--color-surface);
+  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+  padding: var(--space-8) var(--space-6) calc(var(--space-10) + env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-5);
+  box-shadow: 0 -8px 40px rgba(0, 0, 0, 0.3);
+  transform: translateY(100%);
+  transition: transform 320ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.install-overlay.is-visible .install-sheet {
+  transform: translateY(0);
+}
+
+.install-copy {
+  width: 100%;
+  text-align: center;
+}
+
+.install-title {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-xl);
+  font-family: var(--font-display);
+  color: var(--color-text);
+}
+
+.install-desc {
+  margin: 0;
+  font-size: var(--text-sm);
+  line-height: 1.55;
+  color: var(--color-text-muted);
+  max-width: 30ch;
+  margin-inline: auto;
+}
+
+.install-actions {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.install-btn {
+  width: 100%;
+  min-height: 48px;
+  padding: var(--space-4) var(--space-6);
+  border-radius: var(--radius-full);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  transition:
+    background var(--transition-interactive),
+    opacity var(--transition-interactive),
+    transform var(--transition-interactive);
 }
 
 .install-btn:active {
@@ -350,29 +435,27 @@ button {
   color: var(--color-text-inverse);
 }
 
-.install-btn-primary:hover {
-  background: var(--color-primary-hover);
-}
-
 .install-btn-ghost {
   background: var(--color-surface-offset);
   color: var(--color-text-muted);
 }
 
-.install-btn-ghost:hover {
-  background: var(--color-surface-dynamic);
-}
+@media (min-width: 768px) {
+  .install-overlay {
+    align-items: center;
+    padding: 16px;
+  }
 
-.install-inline-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 44px;
-  padding: 0 var(--space-4);
-  border-radius: var(--radius-full);
-  background: var(--color-primary);
-  color: var(--color-text-inverse);
-  font-weight: 600;
+  .install-sheet {
+    width: min(100%, 420px);
+    border-radius: var(--radius-xl);
+    padding: var(--space-8) var(--space-6) var(--space-8);
+    transform: translateY(24px);
+  }
+
+  .install-overlay.is-visible .install-sheet {
+    transform: translateY(0);
+  }
 }
 
 .settings-fab {
