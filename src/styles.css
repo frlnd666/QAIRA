@@ -725,6 +725,28 @@ button {
   font-weight: 600;
 }
 
+.chat-attach-btn.is-recording {
+  background: var(--color-error, #d14343);
+  color: #fff;
+  animation: recordPulse 1.2s infinite;
+}
+
+.chat-attach-cancel {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 0;
+  background: var(--color-surface-offset);
+  color: var(--color-text-muted);
+  font-size: 0.8rem;
+}
+
+@keyframes recordPulse {
+  0% { box-shadow: 0 0 0 0 rgba(209, 67, 67, 0.4); }
+  70% { box-shadow: 0 0 0 8px rgba(209, 67, 67, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(209, 67, 67, 0); }
+}
+
 @media (min-width: 768px) {
   .install-overlay {
     align-items: center;
