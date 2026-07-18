@@ -1,11 +1,20 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { AvatarFace, type MiawbelExpression } from './components/AvatarFace'
-import { askPerplexity } from './lib/perplexity'
+import { askGemini, fileToBase64 } from './lib/gemini'
 import { sanitizeTextForSpeech, speak, warmupVoices } from './lib/tts'
+import { useAudioRecorder } from './lib/useAudioRecorder'
 
 type VoiceState = 'idle' | 'listening' | 'thinking' | 'speaking' | 'error'
 type AppMode = 'bercanda' | 'bermain' | 'belajar'
+type InteractionMode = 'voice' | 'chat'
+type ChatRole = 'user' | 'ai'
+
+interface ChatMessage {
+  id: string
+  role: ChatRole
+  text: string
+}
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>
@@ -19,9 +28,14 @@ declare global {
   }
 }
 
+function createId(): string {
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+}
+
 export default function App() {
   const [voiceState, setVoiceState] = useState<VoiceState>('idle')
   const [appMode, setAppMode] = useState<AppMode>('bercanda')
+  const [interactionMode, setInteractionMode] = useState<InteractionMode>('voice')
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
 
   const [expression, setExpression] = useState<MiawbelExpression>('idle')
@@ -37,14 +51,32 @@ export default function App() {
   const [isIosManualInstall, setIsIosManualInstall] = useState(false)
   const [isInstalling, setIsInstalling] = useState(false)
 
+  const [chatHistory, setChatHistory] = useState<ChatMessage[]>([])
+  const [chatInput, setChatInput] = useState('')
+  const [chatImage, setChatImage] = useState<File | null>(null)
+  const [chatAudioBlob, setChatAudioBlob] = useState<Blob | null>(null)
+  const [isChatBusy, setIsChatBusy] = useState(false)
+  const [chatError, setChatError] = useState('')
+
+  const {
+    isRecording,
+    recordError: recorderError,
+    startRecording,
+    stopRecording,
+    cancelRecording,
+  } = useAudioRecorder()
+
   const recognitionRef = useRef<SpeechRecognition | null>(null)
   const cancelSpeechRef = useRef<(() => void) | null>(null)
   const busyRef = useRef(false)
   const voiceStateRef = useRef<VoiceState>('idle')
   const petTimeoutRef = useRef<number | null>(null)
   const expressionResetTimeoutRef = useRef<number | null>(null)
+  const chatExpressionTimeoutRef = useRef<number | null>(null)
   const deferredPromptRef = useRef<BeforeInstallPromptEvent | null>(null)
   const settingsCloseButtonRef = useRef<HTMLButtonElement | null>(null)
+  const chatHistoryEndRef = useRef<HTMLDivElement | null>(null)
+  const chatImageInputRef = useRef<HTMLInputElement | null>(null)
 
   const recognitionSupported = useMemo(() => {
     return (
@@ -108,6 +140,10 @@ export default function App() {
         window.clearTimeout(expressionResetTimeoutRef.current)
       }
 
+      if (chatExpressionTimeoutRef.current !== null) {
+        window.clearTimeout(chatExpressionTimeoutRef.current)
+      }
+
       window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt)
       window.removeEventListener('appinstalled', handleAppInstalled)
     }
@@ -132,6 +168,16 @@ export default function App() {
     return () => window.removeEventListener('keydown', handleEscape)
   }, [isSettingsOpen])
 
+  useEffect(() => {
+    chatHistoryEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
+  }, [chatHistory])
+
+  useEffect(() => {
+    return () => {
+      cancelRecording()
+    }
+  }, [cancelRecording])
+
   function clearPetTimeout() {
     if (petTimeoutRef.current !== null) {
       window.clearTimeout(petTimeoutRef.current)
@@ -143,6 +189,13 @@ export default function App() {
     if (expressionResetTimeoutRef.current !== null) {
       window.clearTimeout(expressionResetTimeoutRef.current)
       expressionResetTimeoutRef.current = null
+    }
+  }
+
+  function clearChatExpressionTimeout() {
+    if (chatExpressionTimeoutRef.current !== null) {
+      window.clearTimeout(chatExpressionTimeoutRef.current)
+      chatExpressionTimeoutRef.current = null
     }
   }
 
@@ -173,6 +226,11 @@ export default function App() {
     petTimeoutRef.current = window.setTimeout(() => {
       setIsPetting(false)
 
+      if (interactionMode === 'chat') {
+        setExpression('idle')
+        return
+      }
+
       if (voiceStateRef.current === 'idle') {
         setExpression('idle')
         setStatusText(getIdleStatusText())
@@ -200,6 +258,11 @@ export default function App() {
 
     setIsPetting(true)
     setExpression(reaction)
+
+    if (interactionMode === 'chat') {
+      restoreExpressionAfterPet()
+      return
+    }
 
     if (voiceStateRef.current === 'idle') {
       setStatusText('Hihi, kok dielus~')
@@ -233,6 +296,39 @@ export default function App() {
           ? 'Mode bermain dipilih. Ayo seru-seruan bareng~'
           : 'Mode belajar dipilih. Siap untuk tanya jawab yang lebih fokus.'
     )
+  }
+
+  function handleInteractionModeChange(mode: InteractionMode) {
+    if (mode === interactionMode) return
+
+    stopAllAudio()
+    setIsPetting(false)
+    setExpression('idle')
+    setErrorText('')
+
+    if (isRecording) {
+      cancelRecording()
+    }
+
+    if (mode === 'voice') {
+      setIdleState()
+    } else {
+      setStatusText('Mode teks aktif. Kirim pesan, gambar, atau rekaman suara.')
+    }
+
+    setInteractionMode(mode)
+  }
+
+  function buildModePrompt(rawText: string): string {
+    if (appMode === 'bercanda') {
+      return `Jawab dengan gaya hangat, lucu, ringan, dan ramah untuk anak. Pertanyaan pengguna: ${rawText}`
+    }
+
+    if (appMode === 'bermain') {
+      return `Jawab dengan gaya playful, interaktif, imajinatif, dan menyenangkan untuk anak. Pertanyaan pengguna: ${rawText}`
+    }
+
+    return `Jawab dengan gaya edukatif, lembut, jelas, singkat, dan mudah dipahami anak. Pertanyaan pengguna: ${rawText}`
   }
 
   async function handleInstallNow() {
@@ -278,14 +374,7 @@ export default function App() {
     setStatusText('Sedang berpikir...')
 
     try {
-      const modePrompt =
-        appMode === 'bercanda'
-          ? `Jawab dengan gaya hangat, lucu, ringan, dan ramah untuk anak. Pertanyaan pengguna: ${cleanTranscript}`
-          : appMode === 'bermain'
-            ? `Jawab dengan gaya playful, interaktif, imajinatif, dan menyenangkan untuk anak. Pertanyaan pengguna: ${cleanTranscript}`
-            : `Jawab dengan gaya edukatif, lembut, jelas, singkat, dan mudah dipahami anak. Pertanyaan pengguna: ${cleanTranscript}`
-
-      const reply = await askPerplexity(modePrompt)
+      const reply = await askGemini(buildModePrompt(cleanTranscript))
       const spokenReply = sanitizeTextForSpeech(reply)
 
       setVoiceState('speaking')
@@ -391,6 +480,135 @@ export default function App() {
     recognition.start()
   }
 
+  function handleChatImageChange(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0] ?? null
+
+    if (file && !file.type.startsWith('image/')) {
+      setChatError('File harus berupa gambar.')
+      return
+    }
+
+    setChatError('')
+    setChatImage(file)
+  }
+
+  function removeChatImage() {
+    setChatImage(null)
+    if (chatImageInputRef.current) {
+      chatImageInputRef.current.value = ''
+    }
+  }
+
+  function removeChatAudio() {
+    setChatAudioBlob(null)
+  }
+
+  async function handleToggleRecordAudio() {
+    setChatError('')
+
+    if (isRecording) {
+      const blob = await stopRecording()
+      if (blob) {
+        setChatAudioBlob(blob)
+      }
+      return
+    }
+
+    setChatAudioBlob(null)
+    await startRecording()
+  }
+
+  function handleCancelRecording() {
+    cancelRecording()
+  }
+
+  async function handleSendChat() {
+    const cleanText = chatInput.trim()
+
+    if (!cleanText && !chatImage && !chatAudioBlob) {
+      return
+    }
+
+    if (isRecording) {
+      setChatError('Selesaikan atau batalkan rekaman terlebih dahulu.')
+      return
+    }
+
+    const userMessage: ChatMessage = {
+      id: createId(),
+      role: 'user',
+      text: cleanText || '(Mengirim lampiran tanpa teks)',
+    }
+
+    setChatHistory((prev) => [...prev, userMessage])
+    setChatInput('')
+    setChatError('')
+    setIsChatBusy(true)
+    setExpression('thinking')
+
+    const attachments: { mimeType: string; base64: string }[] = []
+
+    try {
+      if (chatImage) {
+        const base64 = await fileToBase64(chatImage)
+        attachments.push({ mimeType: chatImage.type || 'image/jpeg', base64 })
+      }
+
+      if (chatAudioBlob) {
+        const mimeType = chatAudioBlob.type || 'audio/webm'
+        const audioFile = new File([chatAudioBlob], 'rekaman-audio', { type: mimeType })
+        const base64 = await fileToBase64(audioFile)
+        attachments.push({ mimeType, base64 })
+      }
+
+      const promptText = cleanText
+        ? buildModePrompt(cleanText)
+        : buildModePrompt('Tolong tanggapi lampiran yang saya kirimkan ini.')
+
+      const reply = await askGemini(promptText, attachments)
+
+      setChatHistory((prev) => [...prev, { id: createId(), role: 'ai', text: reply }])
+      setExpression('speaking')
+      setStatusText('Sedang menjawab di mode teks...')
+
+      clearChatExpressionTimeout()
+      cancelSpeechRef.current = speak(
+        sanitizeTextForSpeech(reply),
+        (value) => setMouthOpen(value),
+        () => {
+          setMouthOpen(0)
+          setExpression('happy')
+          setStatusText('Selesai menjawab di mode teks.')
+
+          chatExpressionTimeoutRef.current = window.setTimeout(() => {
+            if (!isPetting) {
+              setExpression('idle')
+            }
+          }, 1200)
+        }
+      )
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Terjadi kesalahan.'
+      setChatError(message)
+      setChatHistory((prev) => [
+        ...prev,
+        { id: createId(), role: 'ai', text: `Maaf, terjadi kesalahan: ${message}` },
+      ])
+      setExpression('idle')
+    } finally {
+      setIsChatBusy(false)
+      removeChatImage()
+      removeChatAudio()
+    }
+  }
+
+  function handleChatInputKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault()
+      void handleSendChat()
+    }
+  }
+
   const micButtonLabel =
     voiceState === 'listening'
       ? 'Mendengarkan'
@@ -405,6 +623,9 @@ export default function App() {
     voiceState === 'thinking' ||
     voiceState === 'speaking' ||
     isInstalling
+
+  const disableChatSend =
+    isChatBusy || isRecording || (!chatInput.trim() && !chatImage && !chatAudioBlob)
 
   const installModal =
     canRenderPortal && showInstallPrompt && !isInstalled
@@ -568,8 +789,9 @@ export default function App() {
               <div className="settings-section">
                 <h3 className="settings-section-title">Info aplikasi</h3>
                 <p className="settings-info-text">
-                  QAIRA adalah asisten suara interaktif dengan avatar yang dirancang
-                  agar terasa hangat, ramah, dan dekat saat digunakan sehari-hari.
+                  QAIRA adalah asisten interaktif dengan avatar yang bisa diajak
+                  bicara lewat suara maupun teks, termasuk mengirim gambar dan
+                  rekaman audio.
                 </p>
               </div>
 
@@ -598,13 +820,7 @@ export default function App() {
             aria-expanded={isSettingsOpen}
             onClick={() => setIsSettingsOpen(true)}
           >
-            <svg
-              width="22"
-              height="22"
-              viewBox="0 0 24 24"
-              fill="none"
-              aria-hidden="true"
-            >
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path
                 d="M12 8.75A3.25 3.25 0 1 0 12 15.25A3.25 3.25 0 1 0 12 8.75Z"
                 stroke="currentColor"
@@ -642,72 +858,186 @@ export default function App() {
               <p>Asisten Pribadi Arabella</p>
             </div>
 
-            <button
-              className={`mic-button is-${voiceState}`}
-              onClick={startListening}
-              disabled={disableMic}
-              aria-label={micButtonLabel}
-              type="button"
-            >
-              <span className="mic-button-ring" />
-              <span className="mic-button-core">
-                <svg
-                  width="34"
-                  height="34"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  aria-hidden="true"
-                >
-                  <path
-                    d="M12 15a3 3 0 0 0 3-3V7a3 3 0 1 0-6 0v5a3 3 0 0 0 3 3Z"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                  <path
-                    d="M19 11a7 7 0 0 1-14 0"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                  />
-                  <path
-                    d="M12 18v3"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                  />
-                  <path
-                    d="M8 21h8"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                  />
-                </svg>
-              </span>
-            </button>
-
-            <div className="status-block">
-              <p className="status-text">{statusText}</p>
-
-              <p className="helper-text">
-                Mode aktif: <span>{appMode}</span>
-              </p>
-
-              {!recognitionSupported && (
-                <p className="helper-text">
-                  Browser ini tidak mendukung SpeechRecognition.
-                </p>
-              )}
-
-              {lastHeard && (
-                <p className="helper-text">
-                  Terdengar: <span>{lastHeard}</span>
-                </p>
-              )}
-
-              {errorText && <p className="error-text">{errorText}</p>}
+            <div className="chat-mode-toggle" role="tablist" aria-label="Pilih cara berinteraksi">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={interactionMode === 'voice'}
+                className={`chat-mode-btn ${interactionMode === 'voice' ? 'is-active' : ''}`}
+                onClick={() => handleInteractionModeChange('voice')}
+              >
+                Suara
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={interactionMode === 'chat'}
+                className={`chat-mode-btn ${interactionMode === 'chat' ? 'is-active' : ''}`}
+                onClick={() => handleInteractionModeChange('chat')}
+              >
+                Teks
+              </button>
             </div>
+
+            {interactionMode === 'voice' ? (
+              <>
+                <button
+                  className={`mic-button is-${voiceState}`}
+                  onClick={startListening}
+                  disabled={disableMic}
+                  aria-label={micButtonLabel}
+                  type="button"
+                >
+                  <span className="mic-button-ring" />
+                  <span className="mic-button-core">
+                    <svg width="34" height="34" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                      <path
+                        d="M12 15a3 3 0 0 0 3-3V7a3 3 0 1 0-6 0v5a3 3 0 0 0 3 3Z"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                      <path d="M19 11a7 7 0 0 1-14 0" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                      <path d="M12 18v3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                      <path d="M8 21h8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                    </svg>
+                  </span>
+                </button>
+
+                <div className="status-block">
+                  <p className="status-text">{statusText}</p>
+
+                  <p className="helper-text">
+                    Mode aktif: <span>{appMode}</span>
+                  </p>
+
+                  {!recognitionSupported && (
+                    <p className="helper-text">Browser ini tidak mendukung SpeechRecognition.</p>
+                  )}
+
+                  {lastHeard && (
+                    <p className="helper-text">
+                      Terdengar: <span>{lastHeard}</span>
+                    </p>
+                  )}
+
+                  {errorText && <p className="error-text">{errorText}</p>}
+                </div>
+              </>
+            ) : (
+              <div className="chat-panel">
+                <div className="chat-history">
+                  {chatHistory.length === 0 && (
+                    <p className="helper-text chat-empty-hint">
+                      Belum ada percakapan. Kirim teks, gambar, atau rekaman suara.
+                    </p>
+                  )}
+
+                  {chatHistory.map((message) => (
+                    <div key={message.id} className={`chat-bubble chat-bubble-${message.role}`}>
+                      {message.text}
+                    </div>
+                  ))}
+
+                  <div ref={chatHistoryEndRef} />
+                </div>
+
+                <div className="chat-attachments">
+                  <label className="chat-attach-btn" aria-label="Lampirkan gambar">
+                    📷
+                    <input
+                      ref={chatImageInputRef}
+                      type="file"
+                      accept="image/*"
+                      hidden
+                      onChange={handleChatImageChange}
+                      disabled={isChatBusy}
+                    />
+                  </label>
+
+                  <button
+                    type="button"
+                    className={`chat-attach-btn ${isRecording ? 'is-recording' : ''}`}
+                    onClick={handleToggleRecordAudio}
+                    aria-label={isRecording ? 'Berhenti merekam' : 'Rekam audio'}
+                    disabled={isChatBusy}
+                  >
+                    {isRecording ? '⏹️' : '🎤'}
+                  </button>
+
+                  {isRecording && (
+                    <button
+                      type="button"
+                      className="chat-attach-cancel"
+                      onClick={handleCancelRecording}
+                      aria-label="Batalkan rekaman"
+                    >
+                      ✕
+                    </button>
+                  )}
+
+                  {chatImage && !isRecording && (
+                    <span className="chat-attach-name">
+                      {chatImage.name}
+                      <button
+                        type="button"
+                        className="chat-attach-remove"
+                        onClick={removeChatImage}
+                        aria-label="Hapus gambar"
+                        disabled={isChatBusy}
+                      >
+                        ✕
+                      </button>
+                    </span>
+                  )}
+
+                  {chatAudioBlob && !isRecording && (
+                    <span className="chat-attach-name">
+                      Rekaman siap dikirim
+                      <button
+                        type="button"
+                        className="chat-attach-remove"
+                        onClick={removeChatAudio}
+                        aria-label="Hapus rekaman audio"
+                        disabled={isChatBusy}
+                      >
+                        ✕
+                      </button>
+                    </span>
+                  )}
+                </div>
+
+                <div className="chat-input-row">
+                  <input
+                    type="text"
+                    className="chat-input"
+                    placeholder="Tulis pesan..."
+                    value={chatInput}
+                    onChange={(event) => setChatInput(event.target.value)}
+                    onKeyDown={handleChatInputKeyDown}
+                    disabled={isChatBusy || isRecording}
+                  />
+                  <button
+                    type="button"
+                    className="chat-send-btn"
+                    onClick={() => void handleSendChat()}
+                    disabled={disableChatSend}
+                  >
+                    {isChatBusy ? 'Mengirim...' : 'Kirim'}
+                  </button>
+                </div>
+
+                <div className="status-block">
+                  <p className="helper-text">
+                    Mode aktif: <span>{appMode}</span>
+                  </p>
+
+                  {recorderError && <p className="error-text">{recorderError}</p>}
+                  {chatError && <p className="error-text">{chatError}</p>}
+                </div>
+              </div>
+            )}
           </div>
         </section>
       </main>
@@ -716,4 +1046,4 @@ export default function App() {
       {settingsModal}
     </>
   )
-}
+    }
