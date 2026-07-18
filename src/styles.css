@@ -626,6 +626,105 @@ button {
   }
 }
 
+.chat-mode-toggle {
+  display: flex;
+  gap: 8px;
+  background: var(--color-surface-offset);
+  border-radius: var(--radius-full);
+  padding: 4px;
+}
+
+.chat-mode-btn {
+  flex: 1;
+  padding: 8px 16px;
+  border: 0;
+  border-radius: var(--radius-full);
+  background: transparent;
+  color: var(--color-text-muted);
+  font-weight: 600;
+}
+
+.chat-mode-btn.is-active {
+  background: var(--color-primary);
+  color: var(--color-text-inverse);
+}
+
+.chat-panel {
+  width: 100%;
+  display: grid;
+  gap: 12px;
+}
+
+.chat-history {
+  max-height: 240px;
+  overflow-y: auto;
+  display: grid;
+  gap: 8px;
+}
+
+.chat-bubble {
+  padding: 10px 14px;
+  border-radius: 16px;
+  font-size: 0.92rem;
+  max-width: 90%;
+  word-break: break-word;
+}
+
+.chat-bubble-user {
+  background: var(--color-primary);
+  color: var(--color-text-inverse);
+  justify-self: end;
+}
+
+.chat-bubble-ai {
+  background: var(--color-surface-offset);
+  color: var(--color-text);
+  justify-self: start;
+}
+
+.chat-attachments {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.chat-attach-btn {
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--color-surface-offset);
+  cursor: pointer;
+}
+
+.chat-attach-name {
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+}
+
+.chat-input-row {
+  display: flex;
+  gap: 8px;
+}
+
+.chat-input {
+  flex: 1;
+  padding: 12px 14px;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--color-panel-border);
+  background: var(--color-surface);
+}
+
+.chat-send-btn {
+  padding: 0 20px;
+  border-radius: var(--radius-full);
+  border: 0;
+  background: var(--color-primary);
+  color: var(--color-text-inverse);
+  font-weight: 600;
+}
+
 @media (min-width: 768px) {
   .install-overlay {
     align-items: center;
