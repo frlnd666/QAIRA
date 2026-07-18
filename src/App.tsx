@@ -320,16 +320,16 @@ export default function App() {
   }
 
   function buildModePrompt(rawText: string): string {
-    if (appMode === 'bercanda') {
-      return `Jawab dengan gaya hangat, lucu, ringan, dan ramah untuk anak. Pertanyaan pengguna: ${rawText}`
-    }
-
-    if (appMode === 'bermain') {
-      return `Jawab dengan gaya playful, interaktif, imajinatif, dan menyenangkan untuk anak. Pertanyaan pengguna: ${rawText}`
-    }
-
-    return `Jawab dengan gaya edukatif, lembut, jelas, singkat, dan mudah dipahami anak. Pertanyaan pengguna: ${rawText}`
+  if (appMode === 'bercanda') {
+    return `Suasana obrolan santai dan lucu. Pertanyaan: ${rawText}`
   }
+
+  if (appMode === 'bermain') {
+    return `Suasana obrolan seru dan imajinatif seperti sedang bermain. Pertanyaan: ${rawText}`
+  }
+
+  return `Suasana belajar, jawaban tetap singkat tapi jelas. Pertanyaan: ${rawText}`
+}
 
   async function handleInstallNow() {
     if (isInstalled) {
